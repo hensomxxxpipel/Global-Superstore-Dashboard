@@ -416,7 +416,7 @@ with tab5:
     # )
     
     # api_key = os.getenv("GOOGLE_API_KEY")
-    api_key = st.secrets("GOOGLE_API_KEY")
+    api_key = st.secrets["GOOGLE_API_KEY"]
 
     if st.button("Generate AI Recommendation", type="primary"):
         if not api_key:
