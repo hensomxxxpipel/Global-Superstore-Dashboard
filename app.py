@@ -9,9 +9,6 @@ import plotly.graph_objects as go
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from dotenv import load_dotenv
-
-load_dotenv()
 
 st.set_page_config(
     page_title="Global Superstore | Revival Strategy",
@@ -418,7 +415,8 @@ with tab5:
     #     help="Gunakan GOOGLE_API_KEY di environment/secrets untuk deployment.",
     # )
     
-    api_key = os.getenv("GOOGLE_API_KEY")
+    # api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = st.secrets("GOOGLE_API_KEY")
 
     if st.button("Generate AI Recommendation", type="primary"):
         if not api_key:
