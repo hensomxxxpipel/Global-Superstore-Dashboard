@@ -482,13 +482,17 @@ Answer in Indonesian."""
             llm = ChatGoogleGenerativeAI(
                 model="gemini-3.5-flash",
                 google_api_key=api_key,
-                temperature=0.2,
+                temperature=0.5,
             )
             chain = prompt | llm
             response = chain.invoke({"context": context})
             st.markdown(response.content)
-        except Exception as e:
-            st.error(f"Gagal memanggil Gemini: {e}")
+        except Exception:
+            st.warning(
+                "🤖 **AI Recommendation sedang tidak tersedia.**\n\n"
+                "Analisis dashboard tetap dapat digunakan. "
+                "Silakan coba generate rekomendasi kembali beberapa saat lagi."
+            )
 
     st.markdown("### Recommended Board storyline")
     st.markdown(
