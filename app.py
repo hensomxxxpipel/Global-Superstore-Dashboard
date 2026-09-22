@@ -140,6 +140,79 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
 # ============================================================
 # TAB 1 — Performance
 # ============================================================
+# with tab1:
+#     st.subheader("Apakah Global Superstore benar-benar underperforming?")
+
+#     ys = year_summary(filtered)
+
+#     if len(ys) > 0:
+#         a, b = st.columns(2)
+
+#         with a:
+#             fig = go.Figure()
+#             fig.add_trace(go.Bar(x=ys["Year"], y=ys["Sales"], name="Sales"))
+#             fig.add_trace(go.Bar(x=ys["Year"], y=ys["Profit"], name="Profit"))
+#             fig.update_layout(
+#                 title="Sales & Profit by Year",
+#                 barmode="group",
+#                 yaxis_title="USD",
+#                 xaxis_title="Year",
+#                 height=400,
+#             )
+#             st.plotly_chart(fig, use_container_width=True)
+
+#         with b:
+#             fig = go.Figure()
+#             fig.add_trace(
+#                 go.Scatter(
+#                     x=ys["Year"], y=ys["Margin"] * 100,
+#                     mode="lines+markers", name="Profit Margin"
+#                 )
+#             )
+#             fig.update_layout(
+#                 title="Profit Margin Trend",
+#                 yaxis_title="Margin (%)",
+#                 xaxis_title="Year",
+#                 height=400,
+#             )
+#             st.plotly_chart(fig, use_container_width=True)
+
+#         st.dataframe(
+#             ys[["Year", "Sales", "Sales YoY", "Profit", "Profit YoY", "Margin"]]
+#             .style.format({
+#                 "Sales": "${:,.0f}",
+#                 "Profit": "${:,.0f}",
+#                 "Sales YoY": "{:.1%}",
+#                 "Profit YoY": "{:.1%}",
+#                 "Margin": "{:.1%}",
+#             }),
+#             use_container_width=True,
+#             hide_index=True,
+#         )
+
+#     monthly = (
+#         filtered.groupby(["Year", "Month", "Month Name"], as_index=False)
+#         .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"))
+#         .sort_values(["Year", "Month"])
+#     )
+#     monthly["Period"] = pd.to_datetime(
+#         monthly["Year"].astype(str) + "-" + monthly["Month"].astype(str) + "-01"
+#     )
+
+#     fig = px.line(
+#         monthly, x="Period", y=["Sales", "Profit"],
+#         markers=True, title="Monthly Sales & Profit Trend"
+#     )
+#     fig.update_layout(height=400, yaxis_title="USD", xaxis_title="")
+#     st.plotly_chart(fig, use_container_width=True)
+
+#     st.info(
+#         "Interpretasi utama dari data penuh: Sales dan Profit meningkat dari 2011–2014. "
+#         "Namun, margin mencapai puncak pada 2013 lalu turun pada 2014. "
+#         "Jadi isu utamanya bukan penurunan penjualan secara keseluruhan, melainkan "
+#         "perlindungan profitabilitas saat perusahaan tumbuh."
+#     )
+
 with tab1:
     st.subheader("Apakah Global Superstore benar-benar underperforming?")
 
@@ -150,8 +223,21 @@ with tab1:
 
         with a:
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=ys["Year"], y=ys["Sales"], name="Sales"))
-            fig.add_trace(go.Bar(x=ys["Year"], y=ys["Profit"], name="Profit"))
+            fig.add_trace(
+                go.Bar(
+                    x=ys["Year"],
+                    y=ys["Sales"],
+                    name="Sales"
+                )
+            )
+            fig.add_trace(
+                go.Bar(
+                    x=ys["Year"],
+                    y=ys["Profit"],
+                    name="Profit"
+                )
+            )
+
             fig.update_layout(
                 title="Sales & Profit by Year",
                 barmode="group",
@@ -159,27 +245,40 @@ with tab1:
                 xaxis_title="Year",
                 height=400,
             )
+
             st.plotly_chart(fig, use_container_width=True)
 
         with b:
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
-                    x=ys["Year"], y=ys["Margin"] * 100,
-                    mode="lines+markers", name="Profit Margin"
+                    x=ys["Year"],
+                    y=ys["Margin"] * 100,
+                    mode="lines+markers",
+                    name="Profit Margin"
                 )
             )
+
             fig.update_layout(
                 title="Profit Margin Trend",
                 yaxis_title="Margin (%)",
                 xaxis_title="Year",
                 height=400,
             )
+
             st.plotly_chart(fig, use_container_width=True)
 
         st.dataframe(
-            ys[["Year", "Sales", "Sales YoY", "Profit", "Profit YoY", "Margin"]]
-            .style.format({
+            ys[
+                [
+                    "Year",
+                    "Sales",
+                    "Sales YoY",
+                    "Profit",
+                    "Profit YoY",
+                    "Margin"
+                ]
+            ].style.format({
                 "Sales": "${:,.0f}",
                 "Profit": "${:,.0f}",
                 "Sales YoY": "{:.1%}",
@@ -190,27 +289,192 @@ with tab1:
             hide_index=True,
         )
 
-    monthly = (
-        filtered.groupby(["Year", "Month", "Month Name"], as_index=False)
-        .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"))
-        .sort_values(["Year", "Month"])
-    )
-    monthly["Period"] = pd.to_datetime(
-        monthly["Year"].astype(str) + "-" + monthly["Month"].astype(str) + "-01"
+    # =========================================================
+    # MONTHLY SALES & PROFIT TREND — 1 SELECTED YEAR
+    # =========================================================
+
+    st.subheader("Monthly Sales & Profit Trend")
+
+    available_years = sorted(
+        filtered["Year"].dropna().unique().tolist()
     )
 
-    fig = px.line(
-        monthly, x="Period", y=["Sales", "Profit"],
-        markers=True, title="Monthly Sales & Profit Trend"
-    )
-    fig.update_layout(height=400, yaxis_title="USD", xaxis_title="")
-    st.plotly_chart(fig, use_container_width=True)
+    if available_years:
+
+        selected_year = st.selectbox(
+            "Select Year",
+            available_years,
+            index=len(available_years) - 1,
+            key="tab1_monthly_year"
+        )
+
+        # Filter hanya untuk tahun yang dipilih
+        year_df = filtered[
+            filtered["Year"] == selected_year
+        ].copy()
+
+        # Pastikan Order Date bertipe datetime
+        year_df["Order Date"] = pd.to_datetime(
+            year_df["Order Date"],
+            errors="coerce"
+        )
+
+        # Daftar 12 bulan
+        month_numbers = list(range(1, 13))
+
+        month_names = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ]
+
+        # Agregasi bulanan
+        monthly = (
+            year_df
+            .groupby(
+                year_df["Order Date"].dt.month
+            )
+            .agg(
+                Sales=("Sales", "sum"),
+                Profit=("Profit", "sum")
+            )
+        )
+
+        # Pastikan semua 12 bulan muncul
+        monthly = (
+            monthly
+            .reindex(month_numbers, fill_value=0)
+            .reset_index()
+        )
+
+        monthly.rename(
+            columns={"Order Date": "Month"},
+            inplace=True
+        )
+
+        # Jika nama kolom hasil groupby adalah berbeda
+        if "Month" not in monthly.columns:
+            monthly.rename(
+                columns={monthly.columns[0]: "Month"},
+                inplace=True
+            )
+
+        monthly["Month Name"] = monthly["Month"].map(
+            dict(zip(month_numbers, month_names))
+        )
+
+        # =====================================================
+        # CHART
+        # =====================================================
+
+        fig = make_subplots(
+            specs=[[{"secondary_y": True}]]
+        )
+
+        # Sales
+        fig.add_trace(
+            go.Scatter(
+                x=monthly["Month Name"],
+                y=monthly["Sales"],
+                mode="lines+markers",
+                name="Sales",
+                line=dict(width=3),
+                marker=dict(size=7),
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    "Sales: $%{y:,.0f}"
+                    "<extra></extra>"
+                ),
+            ),
+            secondary_y=False,
+        )
+
+        # Profit
+        fig.add_trace(
+            go.Scatter(
+                x=monthly["Month Name"],
+                y=monthly["Profit"],
+                mode="lines+markers",
+                name="Profit",
+                line=dict(width=3),
+                marker=dict(size=7),
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    "Profit: $%{y:,.0f}"
+                    "<extra></extra>"
+                ),
+            ),
+            secondary_y=True,
+        )
+
+        fig.update_xaxes(
+            title_text="Month",
+            categoryorder="array",
+            categoryarray=month_names,
+        )
+
+        fig.update_yaxes(
+            title_text="Sales (USD)",
+            tickprefix="$",
+            secondary_y=False,
+        )
+
+        fig.update_yaxes(
+            title_text="Profit (USD)",
+            tickprefix="$",
+            secondary_y=True,
+        )
+
+        fig.update_layout(
+            title=f"Sales & Profit Trend — {selected_year}",
+            height=450,
+            hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        # =====================================================
+        # MONTHLY TABLE
+        # =====================================================
+
+        monthly_display = monthly[
+            ["Month Name", "Sales", "Profit"]
+        ].copy()
+
+        st.dataframe(
+            monthly_display.style.format({
+                "Sales": "${:,.0f}",
+                "Profit": "${:,.0f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.info(
-        "Interpretasi utama dari data penuh: Sales dan Profit meningkat dari 2011–2014. "
-        "Namun, margin mencapai puncak pada 2013 lalu turun pada 2014. "
-        "Jadi isu utamanya bukan penurunan penjualan secara keseluruhan, melainkan "
-        "perlindungan profitabilitas saat perusahaan tumbuh."
+        "Interpretasi utama dari data penuh: Sales dan Profit meningkat "
+        "dari 2011–2014. Namun, margin mencapai puncak pada 2013 lalu "
+        "turun pada 2014. Jadi isu utamanya bukan penurunan penjualan "
+        "secara keseluruhan, melainkan perlindungan profitabilitas saat "
+        "perusahaan tumbuh."
     )
 
 # ============================================================
