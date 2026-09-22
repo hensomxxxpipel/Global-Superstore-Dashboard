@@ -1,4 +1,5 @@
 
+import json
 import os
 import pandas as pd
 import numpy as np
@@ -1288,8 +1289,7 @@ with tab7:
 
     st.caption(
         "Masukkan pertanyaan bisnis. AI akan menentukan variabel yang relevan, "
-        "kemudian beberapa alternatif visualisasi akan dibuat agar Anda dapat "
-        "memilih chart yang paling sesuai."
+        "kemudian beberapa jenis chart ditampilkan untuk dipilih."
     )
 
     # --------------------------------------------------------
@@ -1301,7 +1301,7 @@ with tab7:
     if not api_key:
         try:
             api_key = st.secrets["GOOGLE_API_KEY"]
-        except (KeyError, FileNotFoundError):
+        except Exception:
             api_key = None
 
     # --------------------------------------------------------
@@ -1311,36 +1311,35 @@ with tab7:
     user_request = st.text_area(
         "Apa yang ingin Anda analisis?",
         placeholder=(
-            "Contoh: "
-            "Saya ingin melihat apakah discount tinggi "
+            "Contoh: Saya ingin melihat apakah discount tinggi "
             "berhubungan dengan profit rendah."
         ),
         height=100
     )
 
     # --------------------------------------------------------
-    # EXAMPLE QUESTIONS
+    # EXAMPLES
     # --------------------------------------------------------
 
     st.markdown("### 💡 Contoh Pertanyaan")
 
-    ex1, ex2, ex3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
-    with ex1:
+    with col1:
         st.info(
-            "📉 **Profitability**\n\n"
+            "**Profitability**\n\n"
             "Apa hubungan discount dengan profit?"
         )
 
-    with ex2:
+    with col2:
         st.info(
-            "🌍 **Geography**\n\n"
+            "**Geography**\n\n"
             "Negara mana yang memiliki profit paling rendah?"
         )
 
-    with ex3:
+    with col3:
         st.info(
-            "📦 **Product**\n\n"
+            "**Product**\n\n"
             "Bagaimana sales dan profit tiap sub-category?"
         )
 
@@ -1348,18 +1347,20 @@ with tab7:
     # DATA SCHEMA
     # --------------------------------------------------------
 
-    data_schema = {
-        "columns": list(strategic_df.columns),
-        "numeric_columns": strategic_df.select_dtypes(
-            include=np.number
-        ).columns.tolist(),
-        "categorical_columns": strategic_df.select_dtypes(
-            exclude=np.number
-        ).columns.tolist(),
-    }
+    chart_data = df.copy()
+
+    available_columns = chart_data.columns.tolist()
+
+    numeric_columns = chart_data.select_dtypes(
+        include=np.number
+    ).columns.tolist()
+
+    categorical_columns = chart_data.select_dtypes(
+        exclude=np.number
+    ).columns.tolist()
 
     # --------------------------------------------------------
-    # GENERATE
+    # GENERATE BUTTON
     # --------------------------------------------------------
 
     if st.button(
@@ -1387,20 +1388,20 @@ with tab7:
         system_prompt = """
 You are an expert business data analyst.
 
-Your task is to understand the user's business question
-and identify the most relevant columns from the dataset.
+Understand the user's business question and identify
+the most relevant columns from the dataset.
 
 IMPORTANT:
 You are NOT choosing the chart type.
 
 You ONLY determine:
-1. Main dimension / X variable
-2. Main metric / Y variable
-3. Optional grouping variable
-4. Appropriate aggregation
-5. Business interpretation
-
-Use ONLY columns available in the dataset.
+1. X / dimension
+2. Y / metric
+3. Optional grouping column
+4. Aggregation
+5. Short title
+6. Business question
+7. Explanation
 
 Available columns:
 {columns}
@@ -1413,29 +1414,34 @@ Categorical columns:
 
 Rules:
 
-- Never invent column names.
-- If the question asks "which", use a categorical dimension.
-- If the question asks about sales/profit/margin, use the relevant metric.
-- If the question asks about relationship/correlation between two numeric
-  variables, identify both numeric variables.
-- If the question asks about trends over time, use the appropriate date/year
-  column.
-- Prefer Profit, Sales, Quantity, Discount, Shipping Cost when relevant.
-- Aggregation should normally be "sum" for Sales, Profit, Quantity,
-  Shipping Cost and "mean" for Discount.
+- Use ONLY existing columns.
+- Never invent a column.
+- For "which", "compare", or ranking questions,
+  choose an appropriate categorical dimension.
+- For sales/profit questions, use Sales or Profit.
+- For discount analysis, use Discount.
+- For shipping analysis, use Shipping Cost.
+- For relationships between two numeric variables,
+  choose both numeric variables.
+- For time analysis, use Order Date, Ship Date, Year,
+  or another existing time column.
+- Use SUM for Sales, Profit, Quantity, Shipping Cost.
+- Use MEAN for Discount.
 - Do not calculate results.
 - Do not invent numbers.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON.
+
+Format:
 
 {
-  "x": "column name",
-  "y": "column name",
-  "color": "column name or null",
-  "aggregation": "sum or mean or count",
-  "title": "short title",
-  "business_question": "what the visualization is trying to answer",
-  "interpretation": "why these variables are relevant"
+    "x": "column name",
+    "y": "column name",
+    "color": "column name or null",
+    "aggregation": "sum",
+    "title": "Chart title",
+    "business_question": "Question being analyzed",
+    "interpretation": "Why these variables are relevant"
 }
 """
 
@@ -1447,9 +1453,7 @@ Return ONLY valid JSON:
             (
                 "human",
                 """
-Dataset schema:
-
-Columns:
+Dataset columns:
 {columns}
 
 Numeric columns:
@@ -1458,37 +1462,41 @@ Numeric columns:
 Categorical columns:
 {categorical_columns}
 
-User question:
+User request:
 {user_request}
 """
             )
         ])
+
+        # ----------------------------------------------------
+        # CALL GEMINI
+        # ----------------------------------------------------
 
         try:
 
             llm = ChatGoogleGenerativeAI(
                 model="gemini-2.5-flash",
                 google_api_key=api_key,
-                temperature=0.1,
+                temperature=0.1
             )
 
             chain = prompt | llm
 
             response = chain.invoke({
                 "columns": ", ".join(
-                    data_schema["columns"]
+                    available_columns
                 ),
                 "numeric_columns": ", ".join(
-                    data_schema["numeric_columns"]
+                    numeric_columns
                 ),
                 "categorical_columns": ", ".join(
-                    data_schema["categorical_columns"]
+                    categorical_columns
                 ),
                 "user_request": user_request
             })
 
             # ------------------------------------------------
-            # EXTRACT TEXT
+            # EXTRACT RESPONSE
             # ------------------------------------------------
 
             content = response.content
@@ -1499,475 +1507,514 @@ User question:
 
                 for item in content:
 
-                    if (
-                        isinstance(item, dict)
-                        and item.get("type") == "text"
-                    ):
-                        text_parts.append(
-                            item.get("text", "")
-                        )
+                    if isinstance(item, dict):
+
+                        if item.get("type") == "text":
+                            text_parts.append(
+                                item.get("text", "")
+                            )
 
                     elif isinstance(item, str):
+
                         text_parts.append(item)
 
                 content = "\n".join(text_parts)
 
-            if not isinstance(content, str):
+            elif not isinstance(content, str):
+
                 content = str(content)
 
             # ------------------------------------------------
-            # CLEAN JSON
+            # CLEAN GEMINI RESPONSE
             # ------------------------------------------------
 
             content = content.strip()
 
-            if content.startswith("```"):
-                content = (
-                    content
-                    .replace("```json", "")
-                    .replace("```", "")
-                    .strip()
+            if "```json" in content:
+
+                content = content.replace(
+                    "```json",
+                    ""
                 )
+
+            if "```" in content:
+
+                content = content.replace(
+                    "```",
+                    ""
+                )
+
+            content = content.strip()
+
+            # ------------------------------------------------
+            # PARSE JSON
+            # ------------------------------------------------
 
             chart_spec = json.loads(content)
 
-            # ------------------------------------------------
-            # VALIDATE COLUMNS
-            # ------------------------------------------------
+        except Exception as e:
 
-            if chart_spec["x"] not in strategic_df.columns:
-                raise ValueError(
-                    f"Invalid X column: {chart_spec['x']}"
+            st.error(
+                "AI gagal memahami pertanyaan Anda."
+            )
+
+            st.caption(
+                f"Detail error: {str(e)}"
+            )
+
+            st.stop()
+
+        # ----------------------------------------------------
+        # VALIDATE AI OUTPUT
+        # ----------------------------------------------------
+
+        x_col = chart_spec.get("x")
+        y_col = chart_spec.get("y")
+        color_col = chart_spec.get("color")
+        aggregation = chart_spec.get(
+            "aggregation",
+            "sum"
+        )
+
+        if x_col not in available_columns:
+
+            st.error(
+                f"AI memilih kolom yang tidak tersedia: {x_col}"
+            )
+
+            st.stop()
+
+        if (
+            y_col
+            and y_col not in available_columns
+        ):
+
+            st.error(
+                f"AI memilih kolom Y yang tidak tersedia: {y_col}"
+            )
+
+            st.stop()
+
+        if (
+            color_col
+            and color_col not in available_columns
+        ):
+
+            st.error(
+                f"AI memilih kolom grouping yang tidak tersedia: "
+                f"{color_col}"
+            )
+
+            st.stop()
+
+        # ----------------------------------------------------
+        # SHOW AI RESULT
+        # ----------------------------------------------------
+
+        st.success(
+            "AI berhasil memahami pertanyaan Anda."
+        )
+
+        st.markdown("## 🧠 AI Analysis")
+
+        st.markdown(
+            f"""
+**Business Question**
+
+{chart_spec.get("business_question", "-")}
+
+**Variables**
+
+- **X / Dimension:** `{x_col}`
+- **Y / Metric:** `{y_col or "-"}`
+- **Grouping:** `{color_col or "-"}`
+- **Aggregation:** `{aggregation}`
+
+**Why these variables?**
+
+{chart_spec.get("interpretation", "-")}
+"""
+        )
+
+        st.divider()
+
+        # ----------------------------------------------------
+        # PREPARE DATA
+        # ----------------------------------------------------
+
+        # ================================================
+        # CASE 1 — TWO NUMERIC VARIABLES
+        # Used mainly for Scatter
+        # ================================================
+
+        x_is_numeric = pd.api.types.is_numeric_dtype(
+            chart_data[x_col]
+        )
+
+        y_is_numeric = (
+            y_col is not None
+            and pd.api.types.is_numeric_dtype(
+                chart_data[y_col]
+            )
+        )
+
+        # ================================================
+        # AGGREGATED DATA
+        # ================================================
+
+        grouped_df = None
+
+        if y_col:
+
+            if aggregation == "mean":
+
+                grouped_df = (
+                    chart_data
+                    .groupby(
+                        x_col,
+                        as_index=False
+                    )[y_col]
+                    .mean()
                 )
+
+            elif aggregation == "count":
+
+                grouped_df = (
+                    chart_data
+                    .groupby(x_col)
+                    .size()
+                    .reset_index(
+                        name="Count"
+                    )
+                )
+
+                y_plot = "Count"
+
+            else:
+
+                grouped_df = (
+                    chart_data
+                    .groupby(
+                        x_col,
+                        as_index=False
+                    )[y_col]
+                    .sum()
+                )
+
+                y_plot = y_col
+
+            if aggregation == "mean":
+                y_plot = y_col
+
+            # Limit categorical data
+            if not x_is_numeric:
+
+                grouped_df = (
+                    grouped_df
+                    .sort_values(
+                        y_plot,
+                        ascending=False
+                    )
+                    .head(20)
+                )
+
+        # ----------------------------------------------------
+        # CHART TABS
+        # ----------------------------------------------------
+
+        st.markdown("## 📊 Choose Your Visualization")
+
+        chart_tabs = st.tabs([
+            "📊 Bar",
+            "📈 Line",
+            "🔵 Scatter",
+            "🥧 Pie",
+            "🌊 Area",
+            "📦 Box"
+        ])
+
+        # ====================================================
+        # BAR CHART
+        # ====================================================
+
+        with chart_tabs[0]:
+
+            if grouped_df is not None:
+
+                fig = px.bar(
+                    grouped_df,
+                    x=x_col,
+                    y=y_plot,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Bar Chart"
+                    )
+                )
+
+                fig.update_layout(
+                    height=500
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Cocok untuk membandingkan nilai antar kategori."
+                )
+
+            else:
+
+                st.warning(
+                    "Bar chart membutuhkan metric Y."
+                )
+
+        # ====================================================
+        # LINE CHART
+        # ====================================================
+
+        with chart_tabs[1]:
+
+            if grouped_df is not None:
+
+                fig = px.line(
+                    grouped_df,
+                    x=x_col,
+                    y=y_plot,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Line Chart"
+                    ),
+                    markers=True
+                )
+
+                fig.update_layout(
+                    height=500
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Paling cocok untuk data yang memiliki urutan waktu."
+                )
+
+            else:
+
+                st.warning(
+                    "Line chart membutuhkan metric Y."
+                )
+
+        # ====================================================
+        # SCATTER PLOT
+        # ====================================================
+
+        with chart_tabs[2]:
 
             if (
-                chart_spec.get("y")
-                and chart_spec["y"] not in strategic_df.columns
+                y_col
+                and x_is_numeric
+                and y_is_numeric
             ):
-                raise ValueError(
-                    f"Invalid Y column: {chart_spec['y']}"
+
+                fig = px.scatter(
+                    chart_data,
+                    x=x_col,
+                    y=y_col,
+                    color=color_col,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Scatter Plot"
+                    ),
+                    opacity=0.55
                 )
+
+                fig.update_layout(
+                    height=500
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Cocok untuk melihat hubungan antara dua variabel numerik."
+                )
+
+            else:
+
+                st.warning(
+                    "Scatter plot membutuhkan X dan Y berupa variabel numerik."
+                )
+
+        # ====================================================
+        # PIE CHART
+        # ====================================================
+
+        with chart_tabs[3]:
 
             if (
-                chart_spec.get("color")
-                and chart_spec["color"] not in strategic_df.columns
+                grouped_df is not None
+                and not x_is_numeric
             ):
-                raise ValueError(
-                    f"Invalid color column: {chart_spec['color']}"
+
+                pie_df = (
+                    grouped_df
+                    .sort_values(
+                        y_plot,
+                        ascending=False
+                    )
+                    .head(10)
                 )
 
-            # ------------------------------------------------
-            # SHOW AI ANALYSIS
-            # ------------------------------------------------
-
-            st.success(
-                "AI berhasil memahami pertanyaan Anda."
-            )
-
-            st.markdown("## 🧠 AI Analysis")
-
-            st.markdown(
-                f"""
-                **Business Question**
-
-                {chart_spec.get("business_question", "-")}
-
-                **Recommended Variables**
-
-                - **X / Dimension:** `{chart_spec["x"]}`
-                - **Y / Metric:** `{chart_spec.get("y", "-")}`
-                - **Grouping:** `{chart_spec.get("color") or "-"}`
-                - **Aggregation:** `{chart_spec.get("aggregation", "sum")}`
-
-                **Why these variables?**
-
-                {chart_spec.get("interpretation", "-")}
-                """
-            )
-
-            st.divider()
-
-            # ------------------------------------------------
-            # PREPARE DATA
-            # ------------------------------------------------
-
-            chart_df = strategic_df.copy()
-
-            x_col = chart_spec["x"]
-            y_col = chart_spec.get("y")
-            color_col = chart_spec.get("color")
-            aggregation = chart_spec.get(
-                "aggregation",
-                "sum"
-            )
-
-            # =================================================
-            # AGGREGATED DATA
-            # =================================================
-
-            if y_col:
-
-                if aggregation == "mean":
-
-                    grouped_df = (
-                        chart_df
-                        .groupby(
-                            x_col,
-                            as_index=False
-                        )[y_col]
-                        .mean()
+                fig = px.pie(
+                    pie_df,
+                    names=x_col,
+                    values=y_plot,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Pie Chart"
                     )
+                )
 
-                elif aggregation == "count":
+                fig.update_layout(
+                    height=500
+                )
 
-                    grouped_df = (
-                        chart_df
-                        .groupby(x_col)
-                        .size()
-                        .reset_index(
-                            name="Count"
-                        )
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Cocok untuk melihat komposisi beberapa kategori."
+                )
+
+            else:
+
+                st.warning(
+                    "Pie chart membutuhkan kategori pada X."
+                )
+
+        # ====================================================
+        # AREA CHART
+        # ====================================================
+
+        with chart_tabs[4]:
+
+            if grouped_df is not None:
+
+                fig = px.area(
+                    grouped_df,
+                    x=x_col,
+                    y=y_plot,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Area Chart"
                     )
+                )
 
-                    y_plot = "Count"
+                fig.update_layout(
+                    height=500
+                )
 
-                else:
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
 
-                    grouped_df = (
-                        chart_df
-                        .groupby(
-                            x_col,
-                            as_index=False
-                        )[y_col]
-                        .sum()
-                    )
+                st.caption(
+                    "Cocok untuk melihat perubahan nilai dari waktu ke waktu."
+                )
 
-                if aggregation != "count":
-                    y_plot = y_col
+            else:
 
-                # Top 20 for categorical charts
-                if not pd.api.types.is_numeric_dtype(
-                    grouped_df[x_col]
-                ):
-                    grouped_df = (
-                        grouped_df
-                        .sort_values(
-                            y_plot,
-                            ascending=False
-                        )
-                        .head(20)
-                    )
+                st.warning(
+                    "Area chart membutuhkan metric Y."
+                )
 
-            # =================================================
-            # CHART OPTIONS
-            # =================================================
+        # ====================================================
+        # BOX PLOT
+        # ====================================================
 
-            st.markdown("## 📊 Choose Your Visualization")
+        with chart_tabs[5]:
 
-            chart_tabs = st.tabs([
-                "📊 Bar",
-                "📈 Line",
-                "🔵 Scatter",
-                "🥧 Pie",
-                "🌊 Area",
-                "📦 Box"
-            ])
-
-            # =================================================
-            # 1. BAR
-            # =================================================
-
-            with chart_tabs[0]:
-
-                if y_col:
-
-                    bar_df = grouped_df.copy()
-
-                    fig_bar = px.bar(
-                        bar_df,
-                        x=x_col,
-                        y=y_plot,
-                        color=color_col,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Bar Chart"
-                        )
-                    )
-
-                    fig_bar.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_bar,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk membandingkan nilai antar kategori."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Bar chart membutuhkan metric."
-                    )
-
-            # =================================================
-            # 2. LINE
-            # =================================================
-
-            with chart_tabs[1]:
-
-                if y_col:
-
-                    line_df = grouped_df.copy()
-
-                    fig_line = px.line(
-                        line_df,
-                        x=x_col,
-                        y=y_plot,
-                        color=color_col,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Line Chart"
-                        ),
-                        markers=True
-                    )
-
-                    fig_line.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_line,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk melihat pola atau perubahan sepanjang waktu."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Line chart membutuhkan metric."
-                    )
-
-            # =================================================
-            # 3. SCATTER
-            # =================================================
-
-            with chart_tabs[2]:
-
-                if (
-                    y_col
-                    and pd.api.types.is_numeric_dtype(
-                        chart_df[x_col]
-                    )
-                    and pd.api.types.is_numeric_dtype(
-                        chart_df[y_col]
-                    )
-                ):
-
-                    fig_scatter = px.scatter(
-                        chart_df,
-                        x=x_col,
-                        y=y_col,
-                        color=color_col,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Scatter Plot"
-                        ),
-                        opacity=0.55
-                    )
-
-                    fig_scatter.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_scatter,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk melihat hubungan antara dua variabel numerik."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Scatter plot membutuhkan dua variabel numerik."
-                    )
-
-            # =================================================
-            # 4. PIE
-            # =================================================
-
-            with chart_tabs[3]:
-
-                if y_col:
-
-                    pie_df = grouped_df.copy()
-
-                    pie_df = (
-                        pie_df
-                        .sort_values(
-                            y_plot,
-                            ascending=False
-                        )
-                        .head(10)
-                    )
-
-                    fig_pie = px.pie(
-                        pie_df,
-                        names=x_col,
-                        values=y_plot,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Pie Chart"
-                        )
-                    )
-
-                    fig_pie.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_pie,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk melihat komposisi dari beberapa kategori."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Pie chart membutuhkan metric."
-                    )
-
-            # =================================================
-            # 5. AREA
-            # =================================================
-
-            with chart_tabs[4]:
-
-                if y_col:
-
-                    area_df = grouped_df.copy()
-
-                    fig_area = px.area(
-                        area_df,
-                        x=x_col,
-                        y=y_plot,
-                        color=color_col,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Area Chart"
-                        )
-                    )
-
-                    fig_area.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_area,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk melihat perubahan nilai dan volume sepanjang waktu."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Area chart membutuhkan metric."
-                    )
-
-            # =================================================
-            # 6. BOX
-            # =================================================
-
-            with chart_tabs[5]:
-
-                if (
-                    y_col
-                    and not pd.api.types.is_numeric_dtype(
-                        chart_df[x_col]
-                    )
-                ):
-
-                    # Limit categories for readability
-                    top_categories = (
-                        chart_df[x_col]
-                        .value_counts()
-                        .head(15)
-                        .index
-                    )
-
-                    box_df = chart_df[
-                        chart_df[x_col]
-                        .isin(top_categories)
-                    ]
-
-                    fig_box = px.box(
-                        box_df,
-                        x=x_col,
-                        y=y_col,
-                        color=color_col,
-                        title=(
-                            f"{chart_spec.get('title', 'Analysis')} "
-                            f"— Box Plot"
-                        )
-                    )
-
-                    fig_box.update_layout(
-                        height=500
-                    )
-
-                    st.plotly_chart(
-                        fig_box,
-                        use_container_width=True
-                    )
-
-                    st.caption(
-                        "Cocok untuk melihat distribusi, median, dan outlier."
-                    )
-
-                else:
-
-                    st.warning(
-                        "Box plot membutuhkan kategori dan metric numerik."
-                    )
-
-            # ------------------------------------------------
-            # DATA PREVIEW
-            # ------------------------------------------------
-
-            st.divider()
-
-            with st.expander(
-                "🔎 View AI Specification"
+            if (
+                y_col
+                and not x_is_numeric
+                and y_is_numeric
             ):
 
-                st.json(chart_spec)
+                # Top 15 categories
+                top_categories = (
+                    chart_data[x_col]
+                    .value_counts()
+                    .head(15)
+                    .index
+                )
+
+                box_df = chart_data[
+                    chart_data[x_col]
+                    .isin(top_categories)
+                ]
+
+                fig = px.box(
+                    box_df,
+                    x=x_col,
+                    y=y_col,
+                    color=color_col,
+                    title=(
+                        f"{chart_spec.get('title', 'Analysis')} "
+                        f"— Box Plot"
+                    )
+                )
+
+                fig.update_layout(
+                    height=500
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Cocok untuk melihat distribusi, median, dan outlier."
+                )
+
+            else:
+
+                st.warning(
+                    "Box plot membutuhkan kategori X dan metric numerik Y."
+                )
+
+        # ----------------------------------------------------
+        # DATA
+        # ----------------------------------------------------
+
+        st.divider()
+
+        with st.expander(
+            "🔎 View AI Specification"
+        ):
+
+            st.json(chart_spec)
+
+        if grouped_df is not None:
 
             with st.expander(
                 "📋 View Aggregated Data"
             ):
 
-                if y_col:
-                    st.dataframe(
-                        grouped_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
+                st.dataframe(
+                    grouped_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
 # -----------------------------
 # Footer
 # -----------------------------
