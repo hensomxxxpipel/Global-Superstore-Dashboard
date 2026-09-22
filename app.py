@@ -127,15 +127,27 @@ st.caption(
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+# tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+#     "1. Performance",
+#     "2. Geography",
+#     "3. Product",
+#     "4. Root Cause",
+#     "5. 12-Month Revival Plan",
+#     "6. AI Recommendation",
+#     "7. AI Chart Maker",
+#     "👥 Customer Behavior"
+# ])
+
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "1. Performance",
     "2. Geography",
     "3. Product",
     "4. Root Cause",
     "5. 12-Month Revival Plan",
-    "6. AI Recommendation",
-    "7. AI Chart Maker",
-    "👥 Customer Behavior"
+    "6. Strategy Cluster",
+    "7. Customer Behavior",
+    "8. AI Recommendation",
+    "9. AI Chart Maker"
 ])
 
 # ============================================================
@@ -602,70 +614,542 @@ with tab3:
         "(sekitar -$64.1K) dan margin sekitar -8.5%."
     )
 
+# # ============================================================
+# # TAB 4 — Root Cause
+# # ============================================================
+# with tab4:
+#     st.subheader("Mengapa profit tertekan?")
+
+#     # Discount bands
+#     bands = pd.cut(
+#         filtered["Discount"],
+#         bins=[-0.001, 0, .10, .20, .30, .40, .50, .60, 1],
+#         labels=["0%", "1–10%", "11–20%", "21–30%", "31–40%", "41–50%", "51–60%", ">60%"],
+#     )
+#     d = (
+#         filtered.assign(Discount_Band=bands)
+#         .groupby("Discount_Band", observed=True)
+#         .agg(
+#             Sales=("Sales", "sum"),
+#             Profit=("Profit", "sum"),
+#             Lines=("Row ID", "count"),
+#         )
+#         .reset_index()
+#     )
+#     d["Margin"] = np.where(d["Sales"] != 0, d["Profit"] / d["Sales"], 0)
+
+#     left, right = st.columns(2)
+
+#     with left:
+#         fig = px.bar(
+#             d, x="Discount_Band", y="Profit",
+#             title="Profit by Discount Band",
+#             text_auto=".2s",
+#         )
+#         fig.add_hline(y=0, line_dash="dash")
+#         st.plotly_chart(fig, use_container_width=True)
+
+#     with right:
+#         ship = aggregate(filtered, "Ship Mode")
+#         fig = px.bar(
+#             ship, x="Ship Mode", y=["Profit", "Shipping_Cost"],
+#             barmode="group",
+#             title="Profit vs Shipping Cost by Ship Mode",
+#         )
+#         st.plotly_chart(fig, use_container_width=True)
+
+#     st.dataframe(
+#         d.style.format({
+#             "Sales": "${:,.0f}",
+#             "Profit": "${:,.0f}",
+#             "Margin": "{:.1%}",
+#         }),
+#         use_container_width=True,
+#         hide_index=True,
+#     )
+
+#     st.markdown("### Root-cause evidence")
+
+#     evidence = [
+#         ["Discount escalation", "Margin turns negative around the 21–30% discount band and becomes increasingly negative at higher discounts."],
+#         ["Regional concentration", "Southeast Asia has very low margin despite meaningful sales volume; average discount is high."],
+#         ["Product mix", "Tables is the largest loss-making sub-category, indicating a product-level pricing/discount problem rather than only a volume problem."],
+#         ["Country concentration", "Several countries have deeply negative margins, including Turkey and Nigeria, indicating localized commercial-policy issues."],
+#         ["Shipping", "Shipping cost is a material cost driver and should be assessed together with order economics, especially in low-margin markets."],
+#     ]
+#     st.table(pd.DataFrame(evidence, columns=["Potential Root Cause", "Evidence from Data"]))
+
 # ============================================================
-# TAB 4 — Root Cause
+# TAB 4 — ROOT CAUSE & DISCOUNT ANALYSIS
 # ============================================================
 with tab4:
+
     st.subheader("Mengapa profit tertekan?")
 
-    # Discount bands
-    bands = pd.cut(
-        filtered["Discount"],
-        bins=[-0.001, 0, .10, .20, .30, .40, .50, .60, 1],
-        labels=["0%", "1–10%", "11–20%", "21–30%", "31–40%", "41–50%", "51–60%", ">60%"],
+    st.caption(
+        "Analisis ini menguji hubungan antara tingkat discount dan "
+        "profitability, kemudian mengidentifikasi area discount yang "
+        "perlu mendapat perhatian lebih lanjut."
     )
-    d = (
-        filtered.assign(Discount_Band=bands)
-        .groupby("Discount_Band", observed=True)
+
+    # ========================================================
+    # 1. DISCOUNT BAND ANALYSIS
+    # ========================================================
+
+    discount_bins = [
+        -0.001,
+        0,
+        0.10,
+        0.20,
+        0.40,
+        0.60,
+        0.80
+    ]
+
+    discount_labels = [
+        "0%",
+        "1–10%",
+        "11–20%",
+        "21–40%",
+        "41–60%",
+        "61–80%"
+    ]
+
+    discount_data = filtered.copy()
+
+    discount_data["Discount Band"] = pd.cut(
+        discount_data["Discount"],
+        bins=discount_bins,
+        labels=discount_labels,
+        include_lowest=True
+    )
+
+    discount_summary = (
+        discount_data
+        .groupby(
+            "Discount Band",
+            observed=False
+        )
         .agg(
             Sales=("Sales", "sum"),
             Profit=("Profit", "sum"),
-            Lines=("Row ID", "count"),
+            Order_Lines=("Row ID", "count"),
+            Orders=("Order ID", "nunique"),
+            Avg_Discount=("Discount", "mean")
         )
+        .reindex(discount_labels)
         .reset_index()
     )
-    d["Margin"] = np.where(d["Sales"] != 0, d["Profit"] / d["Sales"], 0)
+
+    discount_summary["Margin"] = np.where(
+        discount_summary["Sales"] != 0,
+        discount_summary["Profit"]
+        / discount_summary["Sales"],
+        0
+    )
+
+    # Loss-making lines
+    loss_summary = (
+        discount_data
+        .assign(
+            Loss_Line=lambda x: x["Profit"] < 0
+        )
+        .groupby(
+            "Discount Band",
+            observed=False
+        )
+        .agg(
+            Loss_Lines=("Loss_Line", "sum")
+        )
+        .reindex(discount_labels)
+        .reset_index()
+    )
+
+    discount_summary = discount_summary.merge(
+        loss_summary,
+        on="Discount Band",
+        how="left"
+    )
+
+    discount_summary["Loss Line %"] = np.where(
+        discount_summary["Order_Lines"] != 0,
+        discount_summary["Loss_Lines"]
+        / discount_summary["Order_Lines"],
+        0
+    )
+
+    # ========================================================
+    # KPI
+    # ========================================================
+
+    negative_bands = discount_summary[
+        discount_summary["Profit"] < 0
+    ]
+
+    if not negative_bands.empty:
+
+        first_negative_band = negative_bands.iloc[0]["Discount Band"]
+
+    else:
+
+        first_negative_band = "Tidak ada"
+
+    k1, k2, k3, k4 = st.columns(4)
+
+    k1.metric(
+        "Total Profit",
+        money(discount_data["Profit"].sum())
+    )
+
+    k2.metric(
+        "Overall Margin",
+        pct(
+            discount_data["Profit"].sum()
+            / discount_data["Sales"].sum()
+        )
+    )
+
+    k3.metric(
+        "First Negative Band",
+        first_negative_band
+    )
+
+    k4.metric(
+        "High Discount ≥21%",
+        money(
+            discount_data.loc[
+                discount_data["Discount"] >= 0.21,
+                "Profit"
+            ].sum()
+        )
+    )
+
+    # ========================================================
+    # CHART 1 — PROFIT BY DISCOUNT BAND
+    # ========================================================
 
     left, right = st.columns(2)
 
     with left:
+
         fig = px.bar(
-            d, x="Discount_Band", y="Profit",
-            title="Profit by Discount Band",
-            text_auto=".2s",
+            discount_summary,
+            x="Discount Band",
+            y="Profit",
+            text="Profit",
+            title="Profit by Discount Band"
         )
-        fig.add_hline(y=0, line_dash="dash")
-        st.plotly_chart(fig, use_container_width=True)
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        fig.update_traces(
+            texttemplate="$%{text:,.0f}",
+            textposition="outside"
+        )
+
+        fig.update_layout(
+            height=450,
+            yaxis_title="Profit (USD)",
+            xaxis_title="Discount Range"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ========================================================
+    # CHART 2 — MARGIN BY DISCOUNT BAND
+    # ========================================================
 
     with right:
-        ship = aggregate(filtered, "Ship Mode")
-        fig = px.bar(
-            ship, x="Ship Mode", y=["Profit", "Shipping_Cost"],
-            barmode="group",
-            title="Profit vs Shipping Cost by Ship Mode",
+
+        fig = px.line(
+            discount_summary,
+            x="Discount Band",
+            y="Margin",
+            markers=True,
+            title="Profit Margin by Discount Band"
         )
-        st.plotly_chart(fig, use_container_width=True)
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        fig.update_yaxes(
+            tickformat=".1%"
+        )
+
+        fig.update_layout(
+            height=450,
+            yaxis_title="Profit Margin",
+            xaxis_title="Discount Range"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ========================================================
+    # TABLE
+    # ========================================================
+
+    st.markdown("### 📊 Discount → Profit Evidence")
 
     st.dataframe(
-        d.style.format({
+        discount_summary[
+            [
+                "Discount Band",
+                "Sales",
+                "Profit",
+                "Margin",
+                "Orders",
+                "Order_Lines",
+                "Avg_Discount",
+                "Loss_Lines",
+                "Loss Line %"
+            ]
+        ].style.format({
+            "Sales": "${:,.0f}",
+            "Profit": "${:,.0f}",
+            "Margin": "{:.1%}",
+            "Avg_Discount": "{:.1%}",
+            "Loss Line %": "{:.1%}",
+        }),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # ========================================================
+    # 2. DISCOUNT VS PROFIT RELATIONSHIP
+    # ========================================================
+
+    st.markdown("### 🔎 Discount vs Profit")
+
+    relation_df = (
+        filtered
+        .groupby("Discount", as_index=False)
+        .agg(
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Orders=("Order ID", "nunique")
+        )
+    )
+
+    relation_df["Margin"] = np.where(
+        relation_df["Sales"] != 0,
+        relation_df["Profit"]
+        / relation_df["Sales"],
+        0
+    )
+
+    fig = px.scatter(
+        relation_df,
+        x="Discount",
+        y="Profit",
+        size="Sales",
+        hover_data=[
+            "Sales",
+            "Margin",
+            "Orders"
+        ],
+        title="Discount Level vs Aggregate Profit"
+    )
+
+    fig.add_hline(
+        y=0,
+        line_dash="dash"
+    )
+
+    fig.update_xaxes(
+        tickformat=".0%",
+        title="Discount"
+    )
+
+    fig.update_yaxes(
+        title="Profit (USD)"
+    )
+
+    fig.update_layout(
+        height=500
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    st.caption(
+        "Catatan: pola ini menunjukkan association antara discount "
+        "dan profit. Data observasional ini tidak dengan sendirinya "
+        "membuktikan bahwa discount adalah satu-satunya penyebab "
+        "profit negatif."
+    )
+
+    # ========================================================
+    # 3. SEGMENT × DISCOUNT
+    # ========================================================
+
+    st.markdown(
+        "### 👥 Segment × Discount × Profit Margin"
+    )
+
+    segment_discount = (
+        discount_data
+        .groupby(
+            ["Segment", "Discount Band"],
+            observed=False
+        )
+        .agg(
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Orders=("Order ID", "nunique")
+        )
+        .reset_index()
+    )
+
+    segment_discount["Margin"] = np.where(
+        segment_discount["Sales"] != 0,
+        segment_discount["Profit"]
+        / segment_discount["Sales"],
+        0
+    )
+
+    pivot_margin = (
+        segment_discount
+        .pivot(
+            index="Segment",
+            columns="Discount Band",
+            values="Margin"
+        )
+        .reindex(columns=discount_labels)
+    )
+
+    fig = px.imshow(
+        pivot_margin * 100,
+        text_auto=".1f",
+        aspect="auto",
+        labels={
+            "x": "Discount Range",
+            "y": "Segment",
+            "color": "Margin (%)"
+        },
+        title="Profit Margin by Segment and Discount Range",
+        color_continuous_scale="RdYlGn"
+    )
+
+    fig.update_layout(
+        height=400
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    st.dataframe(
+        segment_discount.style.format({
             "Sales": "${:,.0f}",
             "Profit": "${:,.0f}",
             "Margin": "{:.1%}",
         }),
         use_container_width=True,
-        hide_index=True,
+        hide_index=True
     )
 
-    st.markdown("### Root-cause evidence")
+    # ========================================================
+    # 4. SHIPPING ROOT CAUSE
+    # ========================================================
 
-    evidence = [
-        ["Discount escalation", "Margin turns negative around the 21–30% discount band and becomes increasingly negative at higher discounts."],
-        ["Regional concentration", "Southeast Asia has very low margin despite meaningful sales volume; average discount is high."],
-        ["Product mix", "Tables is the largest loss-making sub-category, indicating a product-level pricing/discount problem rather than only a volume problem."],
-        ["Country concentration", "Several countries have deeply negative margins, including Turkey and Nigeria, indicating localized commercial-policy issues."],
-        ["Shipping", "Shipping cost is a material cost driver and should be assessed together with order economics, especially in low-margin markets."],
-    ]
-    st.table(pd.DataFrame(evidence, columns=["Potential Root Cause", "Evidence from Data"]))
+    st.markdown("### 🚚 Shipping Cost")
+
+    ship = aggregate(
+        filtered,
+        "Ship Mode"
+    ).sort_values("Profit")
+
+    left, right = st.columns(2)
+
+    with left:
+
+        fig = px.bar(
+            ship,
+            x="Ship Mode",
+            y="Profit",
+            title="Profit by Ship Mode"
+        )
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with right:
+
+        fig = px.bar(
+            ship,
+            x="Ship Mode",
+            y="Shipping_Ratio",
+            title="Shipping Cost / Sales by Ship Mode"
+        )
+
+        fig.update_yaxes(
+            tickformat=".1%"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ========================================================
+    # ROOT CAUSE SUMMARY
+    # ========================================================
+
+    st.markdown("### 🧩 Root-Cause Evidence")
+
+    evidence = pd.DataFrame([
+        {
+            "Root Cause":
+                "Discount escalation",
+            "Evidence":
+                "Profit dan margin dibandingkan pada beberapa discount range untuk melihat titik perubahan profitability."
+        },
+        {
+            "Root Cause":
+                "Segment discount dependency",
+            "Evidence":
+                "Margin dibandingkan antar segment pada setiap discount range."
+        },
+        {
+            "Root Cause":
+                "Product mix",
+            "Evidence":
+                "Produk loss-making akan ditelusuri lebih lanjut pada Strategy Cluster."
+        },
+        {
+            "Root Cause":
+                "Shipping economics",
+            "Evidence":
+                "Profit dan shipping cost dibandingkan berdasarkan Ship Mode."
+        }
+    ])
+
+    st.dataframe(
+        evidence,
+        use_container_width=True,
+        hide_index=True
+    )
 
 # ============================================================
 # TAB 5 — 12-Month Revival Plan
@@ -1437,11 +1921,371 @@ with tab5:
 
         """
     )
-    
+
 # ============================================================
-# TAB 6 — AI Recommendation
+# TAB 6 — STRATEGY CLUSTER
 # ============================================================
 with tab6:
+
+    st.subheader(
+        "🎯 Strategy Cluster: Product Loss by Discount Range"
+    )
+
+    st.caption(
+        "Tujuan analisis: mengidentifikasi produk dengan profit "
+        "terendah pada setiap discount range sehingga strategi "
+        "dapat dibuat lebih spesifik daripada sekadar mengurangi discount."
+    )
+
+    # ========================================================
+    # DISCOUNT CLUSTERS
+    # ========================================================
+
+    cluster_bins = [
+        -0.001,
+        0.20,
+        0.40,
+        0.60,
+        0.80
+    ]
+
+    cluster_labels = [
+        "0–20%",
+        "21–40%",
+        "41–60%",
+        "61–80%"
+    ]
+
+    cluster_df = filtered.copy()
+
+    cluster_df["Discount Cluster"] = pd.cut(
+        cluster_df["Discount"],
+        bins=cluster_bins,
+        labels=cluster_labels,
+        include_lowest=True
+    )
+
+    # ========================================================
+    # TOP 5 LOSS PRODUCTS PER CLUSTER
+    # ========================================================
+
+    product_cluster = (
+        cluster_df
+        .groupby(
+            [
+                "Discount Cluster",
+                "Product Name"
+            ],
+            observed=False
+        )
+        .agg(
+            Category=("Category", "first"),
+            Sub_Category=("Sub-Category", "first"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Orders=("Order ID", "nunique"),
+            Quantity=("Quantity", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    product_cluster["Margin"] = np.where(
+        product_cluster["Sales"] != 0,
+        product_cluster["Profit"]
+        / product_cluster["Sales"],
+        0
+    )
+
+    # Hanya produk yang loss-making
+    loss_products = product_cluster[
+        product_cluster["Profit"] < 0
+    ].copy()
+
+    # ========================================================
+    # CLUSTER SUMMARY
+    # ========================================================
+
+    cluster_summary = (
+        cluster_df
+        .groupby(
+            "Discount Cluster",
+            observed=False
+        )
+        .agg(
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Orders=("Order ID", "nunique"),
+            Products=("Product Name", "nunique")
+        )
+        .reindex(cluster_labels)
+        .reset_index()
+    )
+
+    cluster_summary["Margin"] = np.where(
+        cluster_summary["Sales"] != 0,
+        cluster_summary["Profit"]
+        / cluster_summary["Sales"],
+        0
+    )
+
+    st.markdown("### 📊 Cluster Overview")
+
+    st.dataframe(
+        cluster_summary.style.format({
+            "Sales": "${:,.0f}",
+            "Profit": "${:,.0f}",
+            "Margin": "{:.1%}",
+        }),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # ========================================================
+    # LOSS CONTRIBUTION
+    # ========================================================
+
+    st.markdown("### 🔥 Profit Loss by Discount Cluster")
+
+    loss_cluster = (
+        loss_products
+        .groupby(
+            "Discount Cluster",
+            observed=False
+        )
+        .agg(
+            Loss_Amount=("Profit", "sum"),
+            Loss_Making_Products=("Product Name", "nunique")
+        )
+        .reindex(cluster_labels)
+        .reset_index()
+    )
+
+    loss_cluster["Loss Amount"] = (
+        loss_cluster["Loss_Amount"].abs()
+    )
+
+    fig = px.bar(
+        loss_cluster,
+        x="Discount Cluster",
+        y="Loss Amount",
+        text="Loss Amount",
+        title="Total Loss from Loss-Making Products"
+    )
+
+    fig.update_traces(
+        texttemplate="$%{text:,.0f}",
+        textposition="outside"
+    )
+
+    fig.update_layout(
+        height=400,
+        yaxis_title="Loss (USD)",
+        xaxis_title="Discount Range"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    # ========================================================
+    # TOP 5 EACH CLUSTER
+    # ========================================================
+
+    st.markdown("## 🔎 Top Loss-Making Products by Discount Cluster")
+
+    for cluster in cluster_labels:
+
+        st.markdown(
+            f"### Discount {cluster}"
+        )
+
+        cluster_products = (
+            loss_products[
+                loss_products["Discount Cluster"] == cluster
+            ]
+            .sort_values(
+                "Profit",
+                ascending=True
+            )
+            .head(5)
+            .copy()
+        )
+
+        if cluster_products.empty:
+
+            st.info(
+                f"Tidak ada produk loss-making pada discount {cluster}."
+            )
+
+            continue
+
+        st.dataframe(
+            cluster_products[
+                [
+                    "Product Name",
+                    "Category",
+                    "Sub_Category",
+                    "Sales",
+                    "Profit",
+                    "Margin",
+                    "Orders",
+                    "Avg_Discount"
+                ]
+            ].style.format({
+                "Sales": "${:,.0f}",
+                "Profit": "${:,.0f}",
+                "Margin": "{:.1%}",
+                "Avg_Discount": "{:.1%}",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    # ========================================================
+    # HEATMAP PRODUCT × DISCOUNT
+    # ========================================================
+
+    st.markdown(
+        "## 🌡️ Product × Discount Range Heatmap"
+    )
+
+    # Top 15 products berdasarkan total absolute loss
+    top_loss_products = (
+        loss_products
+        .groupby("Product Name")["Profit"]
+        .sum()
+        .sort_values()
+        .head(15)
+        .index
+    )
+
+    heatmap_data = (
+        product_cluster[
+            product_cluster["Product Name"]
+            .isin(top_loss_products)
+        ]
+        .pivot_table(
+            index="Product Name",
+            columns="Discount Cluster",
+            values="Profit",
+            aggfunc="sum",
+            observed=False
+        )
+        .reindex(columns=cluster_labels)
+    )
+
+    fig = px.imshow(
+        heatmap_data,
+        text_auto=".0f",
+        aspect="auto",
+        title="Profit by Product and Discount Range",
+        labels={
+            "x": "Discount Range",
+            "y": "Product",
+            "color": "Profit"
+        },
+        color_continuous_scale="RdYlGn"
+    )
+
+    fig.add_hline(
+        y=0,
+        line_dash="dash"
+    )
+
+    fig.update_layout(
+        height=650
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    # ========================================================
+    # STRATEGIC INTERPRETATION
+    # ========================================================
+
+    st.markdown(
+        "## 🧠 Strategic Implication"
+    )
+
+    st.markdown(
+        """
+**Strategi tidak boleh sama untuk seluruh discount range.**
+
+- **0–20%:** gunakan sebagai normal commercial range dan pertahankan produk yang masih profitable.
+- **21–40%:** lakukan review terhadap produk yang mulai menghasilkan negative profit.
+- **41–60%:** prioritaskan pricing/discount review untuk produk dengan loss terbesar.
+- **61–80%:** perlakukan sebagai exception area; produk yang terus menghasilkan loss perlu ditinjau kembali pricing, promotion, atau product mix-nya.
+
+Dengan demikian, keputusan tidak lagi hanya **"kurangi discount"**, tetapi:
+
+> **"Kurangi atau ubah treatment discount pada produk tertentu yang terbukti menghasilkan loss pada discount range tertentu."**
+        """
+    )
+
+    # ========================================================
+    # ACTION TABLE
+    # ========================================================
+
+    strategy_action = pd.DataFrame([
+        {
+            "Discount Range": "0–20%",
+            "Action":
+                "Maintain normal pricing; monitor margin",
+            "Trigger":
+                "Profit tetap positif",
+            "Owner":
+                "Commercial + Finance"
+        },
+        {
+            "Discount Range": "21–40%",
+            "Action":
+                "Review product-level discount",
+            "Trigger":
+                "Product margin < 0%",
+            "Owner":
+                "Commercial + Product"
+        },
+        {
+            "Discount Range": "41–60%",
+            "Action":
+                "Pilot discount reduction / pricing review",
+            "Trigger":
+                "Repeated negative profit",
+            "Owner":
+                "Pricing + Finance"
+        },
+        {
+            "Discount Range": "61–80%",
+            "Action":
+                "Exception approval + product review",
+            "Trigger":
+                "Large recurring loss",
+            "Owner":
+                "Commercial Manager"
+        }
+    ])
+
+    st.dataframe(
+        strategy_action,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.info(
+        "Catatan: produk yang muncul di tabel adalah hasil agregasi "
+        "dari data yang sedang aktif pada sidebar filter. Untuk "
+        "strategic diagnosis utama, gunakan seluruh tahun, seluruh "
+        "market, dan seluruh segment."
+    )
+    
+# ============================================================
+# TAB 7 — AI Recommendation
+# ============================================================
+with tab8:
     st.subheader("🤖 AI Executive Recommendation")
     st.caption(
         "Rekomendasi dibuat dari KPI dan pola data yang dihitung di dashboard. "
@@ -1549,7 +2393,7 @@ Answer in Indonesian."""
 # ============================================================
 # TAB 7 — AI CHART MAKER
 # ============================================================
-with tab7:
+with tab9:
 
     st.subheader("🤖 AI Chart Maker")
 
@@ -2282,7 +3126,7 @@ User request:
                     hide_index=True
                 )
 
-with tab8:
+with tab7:
     st.subheader("👥 Customer Behavior Analysis")
     st.markdown(
         "Analisis perilaku customer berdasarkan **Discount, Sales, Profit, Ship Mode, Segment, dan Product**."
