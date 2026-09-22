@@ -126,7 +126,7 @@ st.caption(
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "1. Performance",
     "2. Geography",
     "3. Product",
@@ -134,6 +134,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "5. 12-Month Revival Plan",
     "6. AI Recommendation",
     "7. AI Chart Maker",
+    "👥 Customer Behavior"
 ])
 
 # ============================================================
@@ -2015,6 +2016,520 @@ User request:
                     use_container_width=True,
                     hide_index=True
                 )
+
+with tab8:
+    st.subheader("👥 Customer Behavior Analysis")
+    st.markdown(
+        "Analisis perilaku customer berdasarkan **Discount, Sales, Profit, Ship Mode, Segment, dan Product**."
+    )
+
+    customer_df = df.copy()
+
+    # ============================================================
+    # PREPARATION
+    # ============================================================
+
+    # Profit Margin
+    customer_df["Profit Margin"] = np.where(
+        customer_df["Sales"] != 0,
+        customer_df["Profit"] / customer_df["Sales"] * 100,
+        0
+    )
+
+    # Discount Band
+    def discount_band(x):
+        if x == 0:
+            return "No Discount"
+        elif x <= 0.10:
+            return "Low (1-10%)"
+        elif x <= 0.20:
+            return "Medium (11-20%)"
+        elif x <= 0.40:
+            return "High (21-40%)"
+        else:
+            return "Very High (>40%)"
+
+    customer_df["Discount Band"] = customer_df["Discount"].apply(discount_band)
+
+    # ============================================================
+    # FILTER
+    # ============================================================
+
+    st.markdown("### 🎛️ Customer Analysis Filter")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        discount_filter = st.selectbox(
+            "Discount Level",
+            [
+                "All",
+                "No Discount",
+                "Low (1-10%)",
+                "Medium (11-20%)",
+                "High (21-40%)",
+                "Very High (>40%)"
+            ]
+        )
+
+    with col2:
+        ship_mode_filter = st.selectbox(
+            "Ship Mode",
+            ["All"] + sorted(customer_df["Ship Mode"].dropna().unique().tolist())
+        )
+
+    with col3:
+        segment_filter = st.selectbox(
+            "Customer Segment",
+            ["All"] + sorted(customer_df["Segment"].dropna().unique().tolist())
+        )
+
+    filtered_customer = customer_df.copy()
+
+    if discount_filter != "All":
+        filtered_customer = filtered_customer[
+            filtered_customer["Discount Band"] == discount_filter
+        ]
+
+    if ship_mode_filter != "All":
+        filtered_customer = filtered_customer[
+            filtered_customer["Ship Mode"] == ship_mode_filter
+        ]
+
+    if segment_filter != "All":
+        filtered_customer = filtered_customer[
+            filtered_customer["Segment"] == segment_filter
+        ]
+
+    # ============================================================
+    # KPI
+    # ============================================================
+
+    st.markdown("### 📌 Customer Overview")
+
+    k1, k2, k3, k4 = st.columns(4)
+
+    total_customers = filtered_customer["Customer Name"].nunique()
+
+    total_orders = filtered_customer["Order ID"].nunique()
+
+    total_sales = filtered_customer["Sales"].sum()
+
+    total_profit = filtered_customer["Profit"].sum()
+
+    with k1:
+        st.metric("Unique Customers", f"{total_customers:,}")
+
+    with k2:
+        st.metric("Orders", f"{total_orders:,}")
+
+    with k3:
+        st.metric("Sales", f"${total_sales:,.0f}")
+
+    with k4:
+        st.metric("Profit", f"${total_profit:,.0f}")
+
+    # ============================================================
+    # CUSTOMER DISCOUNT ANALYSIS
+    # ============================================================
+
+    st.markdown("---")
+    st.markdown("### 💸 1. Siapa yang Paling Sering Membeli Saat Diskon?")
+
+    customer_discount = (
+        filtered_customer
+        .groupby("Customer Name")
+        .agg(
+            Orders=("Order ID", "nunique"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    customer_discount["Profit Margin"] = np.where(
+        customer_discount["Sales"] != 0,
+        customer_discount["Profit"]
+        / customer_discount["Sales"]
+        * 100,
+        0
+    )
+
+    customer_discount = customer_discount.sort_values(
+        "Avg_Discount",
+        ascending=False
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        top_discount = customer_discount.head(15).sort_values(
+            "Avg_Discount"
+        )
+
+        fig = px.bar(
+            top_discount,
+            x="Avg_Discount",
+            y="Customer Name",
+            orientation="h",
+            title="Top 15 Customer berdasarkan Average Discount",
+            labels={
+                "Avg_Discount": "Average Discount",
+                "Customer Name": "Customer"
+            }
+        )
+
+        fig.update_xaxes(tickformat=".0%")
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with col2:
+
+        fig = px.scatter(
+            customer_discount,
+            x="Avg_Discount",
+            y="Profit",
+            size="Sales",
+            hover_name="Customer Name",
+            title="Discount vs Profit per Customer",
+            labels={
+                "Avg_Discount": "Average Discount",
+                "Profit": "Total Profit"
+            }
+        )
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ============================================================
+    # HIGH DISCOUNT CUSTOMERS
+    # ============================================================
+
+    st.markdown("### 🔥 2. Customer yang Membeli pada Diskon Tinggi")
+
+    high_discount = customer_df[
+        customer_df["Discount"] >= 0.21
+    ].copy()
+
+    high_customer = (
+        high_discount
+        .groupby("Customer Name")
+        .agg(
+            High_Discount_Orders=("Order ID", "nunique"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    high_customer["Profit Margin"] = np.where(
+        high_customer["Sales"] != 0,
+        high_customer["Profit"]
+        / high_customer["Sales"]
+        * 100,
+        0
+    )
+
+    high_customer = high_customer.sort_values(
+        "High_Discount_Orders",
+        ascending=False
+    )
+
+    top_high_customer = high_customer.head(20)
+
+    fig = px.bar(
+        top_high_customer.sort_values("High_Discount_Orders"),
+        x="High_Discount_Orders",
+        y="Customer Name",
+        orientation="h",
+        color="Profit",
+        title="Top 20 Customer dengan Pembelian pada Discount ≥ 21%",
+        labels={
+            "High_Discount_Orders": "High Discount Orders",
+            "Customer Name": "Customer"
+        }
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    # ============================================================
+    # DISCOUNT VS PROFIT
+    # ============================================================
+
+    st.markdown("### ⚠️ 3. Customer dengan Discount Tinggi tetapi Profit Rendah")
+
+    risky_customer = high_customer[
+        high_customer["Profit"] < 0
+    ].copy()
+
+    risky_customer = risky_customer.sort_values(
+        "Profit"
+    )
+
+    if len(risky_customer) > 0:
+
+        fig = px.bar(
+            risky_customer.head(15).sort_values("Profit"),
+            x="Profit",
+            y="Customer Name",
+            orientation="h",
+            title="Customer dengan High Discount dan Negative Profit",
+            labels={
+                "Profit": "Profit",
+                "Customer Name": "Customer"
+            }
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    else:
+        st.info(
+            "Tidak ditemukan customer dengan high discount dan negative profit pada filter saat ini."
+        )
+
+    # ============================================================
+    # SHIP MODE / SAME DAY
+    # ============================================================
+
+    st.markdown("---")
+    st.markdown("### 🚚 4. Customer yang Menggunakan Same Day")
+
+    same_day = customer_df[
+        customer_df["Ship Mode"] == "Same Day"
+    ].copy()
+
+    same_day_customer = (
+        same_day
+        .groupby("Customer Name")
+        .agg(
+            Same_Day_Orders=("Order ID", "nunique"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    same_day_customer["Profit Margin"] = np.where(
+        same_day_customer["Sales"] != 0,
+        same_day_customer["Profit"]
+        / same_day_customer["Sales"]
+        * 100,
+        0
+    )
+
+    same_day_customer = same_day_customer.sort_values(
+        "Same_Day_Orders",
+        ascending=False
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        fig = px.bar(
+            same_day_customer.head(15)
+            .sort_values("Same_Day_Orders"),
+            x="Same_Day_Orders",
+            y="Customer Name",
+            orientation="h",
+            title="Top Customer berdasarkan Same Day Orders",
+            labels={
+                "Same_Day_Orders": "Same Day Orders",
+                "Customer Name": "Customer"
+            }
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with col2:
+
+        fig = px.scatter(
+            same_day_customer,
+            x="Avg_Discount",
+            y="Profit",
+            size="Same_Day_Orders",
+            hover_name="Customer Name",
+            title="Same Day Customer: Discount vs Profit",
+            labels={
+                "Avg_Discount": "Average Discount",
+                "Profit": "Profit"
+            }
+        )
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ============================================================
+    # SEGMENT ANALYSIS
+    # ============================================================
+
+    st.markdown("### 👥 5. Segment dan Ketergantungan terhadap Discount")
+
+    segment_analysis = (
+        customer_df
+        .groupby("Segment")
+        .agg(
+            Customers=("Customer Name", "nunique"),
+            Orders=("Order ID", "nunique"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    segment_analysis["Profit Margin"] = np.where(
+        segment_analysis["Sales"] != 0,
+        segment_analysis["Profit"]
+        / segment_analysis["Sales"]
+        * 100,
+        0
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        fig = px.bar(
+            segment_analysis,
+            x="Segment",
+            y="Avg_Discount",
+            title="Average Discount per Segment",
+            text_auto=".1%"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with col2:
+
+        fig = px.bar(
+            segment_analysis,
+            x="Segment",
+            y="Profit Margin",
+            title="Profit Margin per Segment",
+            text_auto=".1f"
+        )
+
+        fig.add_hline(
+            y=0,
+            line_dash="dash"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    # ============================================================
+    # PRODUCT PURCHASED DURING HIGH DISCOUNT
+    # ============================================================
+
+    st.markdown("### 🛒 6. Produk yang Paling Sering Dibeli Saat Discount ≥ 21%")
+
+    high_product = (
+        high_discount
+        .groupby("Product Name")
+        .agg(
+            Orders=("Order ID", "nunique"),
+            Sales=("Sales", "sum"),
+            Profit=("Profit", "sum"),
+            Avg_Discount=("Discount", "mean")
+        )
+        .reset_index()
+    )
+
+    high_product = high_product.sort_values(
+        "Orders",
+        ascending=False
+    )
+
+    fig = px.bar(
+        high_product.head(15)
+        .sort_values("Orders"),
+        x="Orders",
+        y="Product Name",
+        orientation="h",
+        title="Top 15 Products Purchased at High Discount",
+        labels={
+            "Orders": "Orders",
+            "Product Name": "Product"
+        }
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    # ============================================================
+    # CUSTOMER TABLE
+    # ============================================================
+
+    st.markdown("### 📋 Customer Detail")
+
+    display_customer = customer_discount.copy()
+
+    display_customer["Avg Discount"] = (
+        display_customer["Avg_Discount"] * 100
+    ).round(1).astype(str) + "%"
+
+    display_customer["Profit Margin"] = (
+        display_customer["Profit Margin"]
+        .round(2)
+        .astype(str) + "%"
+    )
+
+    display_customer = display_customer[
+        [
+            "Customer Name",
+            "Orders",
+            "Sales",
+            "Profit",
+            "Avg Discount",
+            "Profit Margin"
+        ]
+    ]
+
+    st.dataframe(
+        display_customer.head(50),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
 # -----------------------------
 # Footer
 # -----------------------------
